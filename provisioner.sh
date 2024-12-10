@@ -4,20 +4,27 @@
 echo "Updating and upgrading system..."
 sudo apt-get update -y && sudo apt-get upgrade -y
 
+# Force upgrade for held-back packages (if needed)
+sudo apt-get dist-upgrade -y
+
 # Disable Root Login via SSH
 echo "Disabling root login via SSH..."
 sudo sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sudo sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
-
+sudo systemctl restart ssh
 
 # Disable Unnecessary Services
 echo "Disabling unused services..."
-sudo systemctl disable cups
-sudo systemctl disable avahi-daemon
+# Check if service exists before disabling
+if systemctl list-units --type=service | grep -q 'cups'; then
+    sudo systemctl disable cups
+fi
+if systemctl list-units --type=service | grep -q 'avahi-daemon'; then
+    sudo systemctl disable avahi-daemon
+fi
+# Disable rsync
+sudo systemctl stop rsync
 sudo systemctl disable rsync
-
-
 
 # Enforce Minimum Days Between Password Changes
 echo "Setting minimum days between password changes..."
@@ -60,7 +67,7 @@ sudo echo "net.ipv4.conf.default.send_redirects = 0" >> /etc/sysctl.conf
 # Ensure SSH Uses Appropriate Ciphers
 echo "Configuring SSH to use strong ciphers..."
 sudo sed -i 's/^#Ciphers.*/Ciphers aes128-ctr,aes192-ctr,aes256-ctr/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
+sudo systemctl restart ssh
 
 # Enable Bootloader Password Protection
 echo "Setting bootloader password protection..."
@@ -73,9 +80,5 @@ sudo echo "set superusers=\"root\"" >> /etc/grub.d/40_custom
 sudo echo "password_pbkdf2 root $GRUB_PASS" >> /etc/grub.d/40_custom
 sudo update-grub
 rm -f /tmp/grub-pass
-
-
-
-
 
 echo "Hardening complete!"
