@@ -29,7 +29,15 @@ source "azure-arm" "linux_image" {
 
 build {
   sources = ["source.azure-arm.linux_image"]
+ provisioner "file" {
+    source      = "/provisioner.sh"     # Local file to upload
+    destination = "/tmp/provisioner.sh" # Destination on the instance
+  }
 
+  provisioner "shell" {
+    execute_command = "echo '{{user `ssh_password`}}' | sudo -S bash '{{.Path}}'"
+    script          = "/tmp/provisioner.sh" # Execute the uploaded script
+  }
   provisioner "shell" {
     script = "provisioner.sh"
   }
