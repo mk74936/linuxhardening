@@ -4,11 +4,6 @@
 echo "Updating and upgrading system..."
 sudo apt-get update -y && sudo apt-get upgrade -y
 
-# Restarting SSH Deamon
-
-sudo systemctl restart sshd
-sudo systemctl daemon-reexec
-
 
 # Force upgrade for held-back packages (if needed)
 sudo apt-get dist-upgrade -y
