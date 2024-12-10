@@ -74,17 +74,6 @@ sudo echo "password_pbkdf2 root $GRUB_PASS" >> /etc/grub.d/40_custom
 sudo update-grub
 rm -f /tmp/grub-pass
 
-# Install and Configure Fail2Ban
-echo "Installing and configuring Fail2Ban..."
-sudo apt-get install -y fail2ban
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
-
-# Enable Automatic Security Updates
-echo "Enabling automatic updates..."
-sudo apt-get install -y unattended-upgrades
-sudo dpkg-reconfigure -plow unattended-upgrades
-sudo systemctl enable unattended-upgrades
 
 
 
