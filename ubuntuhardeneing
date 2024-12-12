@@ -84,11 +84,11 @@ echo "install jffs2 /bin/true" >> /etc/modprobe.d/jffs2.conf
 rmmod jffs2 2>/dev/null
 
 # Ensure at/cron is restricted to authorized users
-chmod 600 /etc/cron.allow
-chmod 600 /etc/at.allow
-touch /etc/cron.allow /etc/at.allow
-chown root:root /etc/cron.allow /etc/at.allow
-rm -f /etc/cron.deny /etc/at.deny
+#chmod 600 /etc/cron.allow
+#chmod 600 /etc/at.allow
+#touch /etc/cron.allow /etc/at.allow
+#chown root:root /etc/cron.allow /etc/at.allow
+#rm -f /etc/cron.deny /etc/at.deny
 
 # Enable logging of martian packets (those with impossible addresses)
 echo "net.ipv4.conf.all.log_martians = 1" >> /etc/sysctl.conf
@@ -97,10 +97,10 @@ sysctl -p
 
 # Disable root login via SSH
 sed -i '/^PermitRootLogin/c\PermitRootLogin no' /etc/ssh/sshd_config
-systemctl restart sshd
+systemctl restart ssh
 
 # Remove unnecessary accounts
-awk -F: '($3 < 1000) {print $1}' /etc/passwd | grep -vE "^(root|sync|shutdown|halt)" | while read -r user; do userdel -r "$user"; done
+# awk -F: '($3 < 1000) {print $1}' /etc/passwd | grep -vE "^(root|sync|shutdown|halt)" | while read -r user; do userdel -r "$user"; done
 
 # Enable source validation by reverse path
 sysctl -w net.ipv4.conf.default.rp_filter=1
@@ -120,7 +120,7 @@ chmod 700 /etc/cron.hourly
 
 # Ensure SSH LoginGraceTime is set to one minute or less
 sed -i '/^LoginGraceTime/c\LoginGraceTime 1m' /etc/ssh/sshd_config
-systemctl restart sshd
+systemctl restart ssh
 
 # Sending ICMP redirects should be disabled for all interfaces
 sysctl -w net.ipv4.conf.default.accept_redirects=0
@@ -157,7 +157,7 @@ fi
 
 # Ensure SSH access is limited
 echo "AllowUsers azureuser" >> /etc/ssh/sshd_config  # Replace 'azureuser' with required username(s)
-systemctl restart sshd
+systemctl restart ssh
 
 # Ensure permissions on bootloader config are configured
 chmod 600 /boot/grub/grub.cfg
@@ -168,7 +168,7 @@ sed -i 's/^UMASK.*/UMASK 077/' /etc/login.defs
 # Enable SSH warning banner
 echo "Authorized use only. Unauthorized access is prohibited." > /etc/issue.net
 sed -i 's|^#Banner.*|Banner /etc/issue.net|' /etc/ssh/sshd_config
-systemctl restart sshd
+systemctl restart ssh
 
 # Ensure permissions on /etc/ssh/sshd_config are configured
 chmod 600 /etc/ssh/sshd_config
@@ -184,8 +184,8 @@ echo "fs.suid_dumpable = 0" >> /etc/sysctl.conf
 sysctl -p
 
 # Disable TIPC (Transparent Inter-Process Communication)
-echo "install tipc /bin/true" > /etc/modprobe.d/tipc.conf
-rmmod tipc || true
+# echo "install tipc /bin/true" > /etc/modprobe.d/tipc.conf
+# rmmod tipc || true
 
 # Disable ICMP redirects for all interfaces
 echo "net.ipv4.conf.default.secure_redirects = 0" >> /etc/sysctl.conf
@@ -220,7 +220,7 @@ sed -i '/^ClientAliveInterval/d' $SSH_CONFIG
 sed -i '/^ClientAliveCountMax/d' $SSH_CONFIG
 echo "ClientAliveInterval 300" >> $SSH_CONFIG
 echo "ClientAliveCountMax 0" >> $SSH_CONFIG
-systemctl restart sshd
+systemctl restart ssh
 echo "Configured SSH Idle Timeout Interval."
 
 # Restrict access to the root account via su to the 'root' group
@@ -244,7 +244,7 @@ set_file_permissions /etc/cron.weekly 0700
 # Ensure only approved MAC algorithms are used
 sed -i '/^MACs/d' $SSH_CONFIG
 echo "MACs hmac-sha2-256,hmac-sha2-512" >> $SSH_CONFIG
-systemctl restart sshd
+systemctl restart ssh
 echo "Configured approved MAC algorithms for SSH."
 
 # Enable source validation by reverse path for all interfaces
