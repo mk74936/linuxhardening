@@ -1,0 +1,141 @@
+#!/bin/bash
+set -e
+
+# Function to apply sysctl settings
+apply_sysctl_setting() {
+  local key=$1
+  local value=$2
+  grep -q "^${key}" /etc/sysctl.conf && sudo sed -i "s|^${key}.*|${key} = ${value}|" /etc/sysctl.conf || echo "${key} = ${value}" | sudo tee -a /etc/sysctl.conf
+  sudo sysctl -w ${key}=${value}
+}
+
+# Update system
+sudo apt-get update -y && sudo apt-get upgrade -y
+
+# Disable unused filesystems
+for fs in freevxfs hfs hfsplus jffs2 cramfs; do
+  echo "install ${fs} /bin/true" | sudo tee /etc/modprobe.d/disable-${fs}.conf
+  sudo modprobe -r ${fs}
+done
+
+# Disable RDS
+echo "install rds /bin/true" | sudo tee /etc/modprobe.d/disable-rds.conf
+sudo modprobe -r rds
+
+# Disable SCTP and TIPC
+for protocol in sctp tipc; do
+  echo "install ${protocol} /bin/true" | sudo tee /etc/modprobe.d/disable-${protocol}.conf
+  sudo modprobe -r ${protocol}
+done
+
+# Disable mounting of USB storage devices
+echo "install usb-storage /bin/true" | sudo tee /etc/modprobe.d/disable-usb-storage.conf
+sudo modprobe -r usb-storage
+
+# Disable packet redirects
+apply_sysctl_setting net.ipv4.conf.all.send_redirects 0
+apply_sysctl_setting net.ipv4.conf.default.send_redirects 0
+apply_sysctl_setting net.ipv4.conf.all.accept_redirects 0
+apply_sysctl_setting net.ipv4.conf.default.accept_redirects 0
+apply_sysctl_setting net.ipv4.conf.default.secure_redirects 0
+
+# Disable source-routed packets
+apply_sysctl_setting net.ipv4.conf.all.accept_source_route 0
+apply_sysctl_setting net.ipv4.conf.default.accept_source_route 0
+
+# Enable reverse path filtering
+apply_sysctl_setting net.ipv4.conf.all.rp_filter 1
+apply_sysctl_setting net.ipv4.conf.default.rp_filter 1
+
+# Configure SSH security
+sudo sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#LoginGraceTime.*/LoginGraceTime 60/' /etc/ssh/sshd_config
+sudo sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 900/' /etc/ssh/sshd_config
+sudo sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 0/' /etc/ssh/sshd_config
+sudo sed -i 's/^#Ciphers.*/Ciphers aes128-ctr,aes192-ctr,aes256-ctr/' /etc/ssh/sshd_config
+sudo sed -i 's/^#MACs.*/MACs hmac-sha2-256,hmac-sha2-512/' /etc/ssh/sshd_config
+sudo sed -i 's|^#Banner.*|Banner /etc/issue.net|' /etc/ssh/sshd_config
+sudo chmod 600 /etc/ssh/sshd_config
+sudo systemctl restart ssh
+
+# Configure password policies
+sudo apt-get install libpam-pwquality -y
+sudo sed -i 's/^# minlen =.*/minlen = 14/' /etc/security/pwquality.conf
+sudo sed -i 's/^# dcredit =.*/dcredit = -1/' /etc/security/pwquality.conf
+sudo sed -i 's/^# ucredit =.*/ucredit = -1/' /etc/security/pwquality.conf
+sudo sed -i 's/^# lcredit =.*/lcredit = -1/' /etc/security/pwquality.conf
+sudo sed -i 's/^# ocredit =.*/ocredit = -1/' /etc/security/pwquality.conf
+sudo sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs
+sudo sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   7/' /etc/login.defs
+sudo sed -i 's/^PASS_WARN_AGE.*/PASS_WARN_AGE   14/' /etc/login.defs
+
+# Lockout for failed password attempts
+sudo grep -q 'pam_tally2.so' /etc/pam.d/common-auth || echo 'auth required pam_tally2.so deny=5 unlock_time=900' | sudo tee -a /etc/pam.d/common-auth
+
+# Configure file permissions
+sudo chmod 0400 /etc/gshadow
+sudo chmod 0400 /etc/shadow
+sudo chmod 0600 /etc/passwd
+sudo chmod 0600 /boot/grub/grub.cfg
+sudo chmod 700 /var/tmp
+sudo chmod 750 /home/*
+
+# Check and create missing directories if required for cron
+echo "Configuring cron permissions..."
+for dir in /etc/cron.{hourly,daily,weekly,monthly,d}; do
+  [ -d "$dir" ] && chmod 700 "$dir" || echo "Directory $dir does not exist. Skipping..."
+done
+
+# Remove unnecessary accounts
+for user in games sync; do
+  if id "$user" &>/dev/null; then
+    sudo userdel -r $user || echo "The user $user doesnot exist. Skipping."
+  fi
+  if getent group "$user" &>/dev/null; then
+    sudo groupdel $user || echo "The group $user doesnot exist. Skipping..."
+  fi
+done
+
+# Enable logging of martian packets
+apply_sysctl_setting net.ipv4.conf.all.log_martians 1
+apply_sysctl_setting net.ipv4.conf.default.log_martians 1
+
+# Restrict su command to root group
+sudo dpkg-statoverride --update --add root root 4750 /bin/su
+if ! getent group root &>/dev/null; then
+  sudo groupadd -r root
+fi
+sudo usermod -a -G root $(whoami)
+
+# Remove unnecessary packages
+sudo apt-get autoremove -y
+sudo apt-get clean
+
+# Set umask for all users
+sudo sed -i 's/^UMASK.*/UMASK 077/' /etc/login.defs
+
+# Set noexec, nosuid, and nodev options for /tmp, /var/tmp, /home, and /dev/shm
+for mount in /tmp /var/tmp /dev/shm /home; do
+  if mount | grep -q "$mount"; then
+    sudo mount -o remount,noexec,nodev,nosuid $mount
+  else
+    echo "Mount point $mount is not active. Skipping..."
+  fi
+done
+
+# Enable bootloader password protection
+grub_password="YourStrongPassword"
+hashed_password=$(echo -e "$grub_password\n$grub_password" | grub-mkpasswd-pbkdf2 | awk '/grub.pbkdf2/ {print $NF}')
+if ! grep -q "set superusers=" /etc/grub.d/40_custom; then
+  cat <<EOF | sudo tee -a /etc/grub.d/40_custom
+set superusers="root"
+password_pbkdf2 root $hashed_password
+EOF
+  sudo update-grub
+else
+  echo "GRUB password already configured."
+fi
+
+# Final cleanup
+echo "Hardening complete!"
