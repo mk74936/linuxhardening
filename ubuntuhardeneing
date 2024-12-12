@@ -67,7 +67,7 @@ sudo sed -i 's/^# lcredit =.*/lcredit = -1/' /etc/security/pwquality.conf
 sudo sed -i 's/^# ocredit =.*/ocredit = -1/' /etc/security/pwquality.conf
 
 # Ensure lockout for failed password attempts is configured
-sudo echo 'auth required pam_tally2.so deny=5 unlock_time=900' | sudo tee -a /etc/pam.d/common-auth
+# sudo echo 'auth required pam_tally2.so deny=5 unlock_time=900' | sudo tee -a /etc/pam.d/common-auth
 
 # Disable the installation and use of file systems that are not required (hfs)
 echo "install hfs /bin/true" >> /etc/modprobe.d/hfs.conf
