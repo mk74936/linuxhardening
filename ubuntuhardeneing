@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# Update and Upgrade System
+echo "Updating and upgrading system..."
+sudo apt-get update -y && sudo apt-get upgrade -y
+
+
+# Force upgrade for held-back packages (if needed)
+sudo apt-get dist-upgrade -y
+
 # Function to apply sysctl settings
 apply_sysctl_setting() {
   local key=$1
