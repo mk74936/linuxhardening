@@ -1,9 +1,5 @@
 #!/bin/bash
 
-#Starting SSH Services
-sudo systemctl start ssh
-
-
 # Update and Upgrade System
 echo "Updating and upgrading system..."
 sudo apt-get update -y && sudo apt-get upgrade -y
