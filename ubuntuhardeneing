@@ -1,5 +1,9 @@
 #!/bin/bash
 
+#Starting SSH Services
+sudo systemctl start ssh
+
+
 # Update and Upgrade System
 echo "Updating and upgrading system..."
 sudo apt-get update -y && sudo apt-get upgrade -y
@@ -7,6 +11,7 @@ sudo apt-get update -y && sudo apt-get upgrade -y
 
 # Force upgrade for held-back packages (if needed)
 sudo apt-get dist-upgrade -y
+
 
 # Function to apply sysctl settings
 apply_sysctl_setting() {
@@ -26,7 +31,7 @@ apply_sysctl_setting net.ipv4.conf.default.send_redirects 0
 
 # Appropriate ciphers should be used for SSH (Ciphers aes128-ctr,aes192-ctr,aes256-ctr)
 sudo sed -i 's/^#Ciphers.*/Ciphers aes128-ctr,aes192-ctr,aes256-ctr/' /etc/ssh/sshd_config
-sudo systemctl restart ssh
+
 
 # Disable support for RDS
 echo "install rds /bin/true" | sudo tee /etc/modprobe.d/disable-rds.conf
@@ -96,7 +101,7 @@ sysctl -p
 
 # Disable root login via SSH
 sed -i '/^PermitRootLogin/c\PermitRootLogin no' /etc/ssh/sshd_config
-systemctl restart ssh
+
 
 # Remove unnecessary accounts
 # awk -F: '($3 < 1000) {print $1}' /etc/passwd | grep -vE "^(root|sync|shutdown|halt)" | while read -r user; do userdel -r "$user"; done
@@ -119,7 +124,7 @@ chmod 700 /etc/cron.hourly
 
 # Ensure SSH LoginGraceTime is set to one minute or less
 sed -i '/^LoginGraceTime/c\LoginGraceTime 1m' /etc/ssh/sshd_config
-systemctl restart ssh
+
 
 # Sending ICMP redirects should be disabled for all interfaces
 sysctl -w net.ipv4.conf.default.accept_redirects=0
@@ -156,7 +161,7 @@ fi
 
 # Ensure SSH access is limited
 echo "AllowUsers azureuser" >> /etc/ssh/sshd_config  # Replace 'azureuser' with required username(s)
-systemctl restart ssh
+
 
 # Ensure permissions on bootloader config are configured
 chmod 600 /boot/grub/grub.cfg
@@ -167,7 +172,7 @@ sed -i 's/^UMASK.*/UMASK 077/' /etc/login.defs
 # Enable SSH warning banner
 echo "Authorized use only. Unauthorized access is prohibited." > /etc/issue.net
 sed -i 's|^#Banner.*|Banner /etc/issue.net|' /etc/ssh/sshd_config
-systemctl restart ssh
+
 
 # Ensure permissions on /etc/ssh/sshd_config are configured
 chmod 600 /etc/ssh/sshd_config
@@ -219,7 +224,6 @@ sed -i '/^ClientAliveInterval/d' $SSH_CONFIG
 sed -i '/^ClientAliveCountMax/d' $SSH_CONFIG
 echo "ClientAliveInterval 300" >> $SSH_CONFIG
 echo "ClientAliveCountMax 0" >> $SSH_CONFIG
-systemctl restart ssh
 echo "Configured SSH Idle Timeout Interval."
 
 # Restrict access to the root account via su to the 'root' group
@@ -243,7 +247,6 @@ set_file_permissions /etc/cron.weekly 0700
 # Ensure only approved MAC algorithms are used
 sed -i '/^MACs/d' $SSH_CONFIG
 echo "MACs hmac-sha2-256,hmac-sha2-512" >> $SSH_CONFIG
-systemctl restart ssh
 echo "Configured approved MAC algorithms for SSH."
 
 # Enable source validation by reverse path for all interfaces
@@ -300,6 +303,9 @@ set_mount_option "/home" "nodev"
 # Remount the partitions to apply changes
 echo "Remounting affected partitions..."
 mount -o remount /var/tmp /tmp /dev/shm /home
+
+# Restarting SSH services
+sudo systemctrl restart ssh
 
 # Final cleanup
 echo "Script execution completed. System hardened successfully."
