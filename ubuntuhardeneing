@@ -9,133 +9,290 @@ apply_sysctl_setting() {
   sudo sysctl -w ${key}=${value}
 }
 
-# Update system
-sudo apt-get update -y && sudo apt-get upgrade -y
+# Disable the installation and use of file systems that are not required (freevxfs)
+echo "install freevxfs /bin/true" | sudo tee /etc/modprobe.d/disable-freevxfs.conf
+sudo modprobe -r freevxfs
 
-# Disable unused filesystems
-for fs in freevxfs hfs hfsplus jffs2 cramfs; do
-  echo "install ${fs} /bin/true" | sudo tee /etc/modprobe.d/disable-${fs}.conf
-  sudo modprobe -r ${fs}
-done
+# Ensure packet redirect sending is disabled
+apply_sysctl_setting net.ipv4.conf.all.send_redirects 0
+apply_sysctl_setting net.ipv4.conf.default.send_redirects 0
 
-# Disable RDS
+# Appropriate ciphers should be used for SSH (Ciphers aes128-ctr,aes192-ctr,aes256-ctr)
+sudo sed -i 's/^#Ciphers.*/Ciphers aes128-ctr,aes192-ctr,aes256-ctr/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+
+# Disable support for RDS
 echo "install rds /bin/true" | sudo tee /etc/modprobe.d/disable-rds.conf
 sudo modprobe -r rds
 
-# Disable SCTP and TIPC
-for protocol in sctp tipc; do
-  echo "install ${protocol} /bin/true" | sudo tee /etc/modprobe.d/disable-${protocol}.conf
-  sudo modprobe -r ${protocol}
-done
+# Ensure rsync service is not enabled
+sudo systemctl disable rsync --now || echo "Rsync service not installed"
 
-# Disable mounting of USB storage devices
+# All bootloaders should have password protection enabled
+sudo grub-mkpasswd-pbkdf2 <<EOF > /tmp/grub-pass
+YourStrongPassword
+YourStrongPassword
+EOF
+GRUB_PASS=$(grep -oP '(?<=PBKDF2 hash of your password is ).*' /tmp/grub-pass)
+sudo echo "set superusers=\"root\"" >> /etc/grub.d/40_custom
+sudo echo "password_pbkdf2 root $GRUB_PASS" >> /etc/grub.d/40_custom
+sudo update-grub
+rm -f /tmp/grub-pass
+
+# Ensure mounting of USB storage devices is disabled
 echo "install usb-storage /bin/true" | sudo tee /etc/modprobe.d/disable-usb-storage.conf
 sudo modprobe -r usb-storage
 
-# Disable packet redirects
-apply_sysctl_setting net.ipv4.conf.all.send_redirects 0
-apply_sysctl_setting net.ipv4.conf.default.send_redirects 0
-apply_sysctl_setting net.ipv4.conf.all.accept_redirects 0
-apply_sysctl_setting net.ipv4.conf.default.accept_redirects 0
-apply_sysctl_setting net.ipv4.conf.default.secure_redirects 0
+# Ensure minimum days between password changes is 7 or more
+sudo sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   7/' /etc/login.defs
 
-# Disable source-routed packets
-apply_sysctl_setting net.ipv4.conf.all.accept_source_route 0
-apply_sysctl_setting net.ipv4.conf.default.accept_source_route 0
+# Enable Logging
+apply_sysctl_setting net.ipv4.conf.all.log_martians 1
+apply_sysctl_setting net.ipv4.conf.default.log_martians 1
 
-# Enable reverse path filtering
-apply_sysctl_setting net.ipv4.conf.all.rp_filter 1
-apply_sysctl_setting net.ipv4.conf.default.rp_filter 1
-
-# Configure SSH security
-sudo sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sudo sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo sed -i 's/^#LoginGraceTime.*/LoginGraceTime 60/' /etc/ssh/sshd_config
-sudo sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 900/' /etc/ssh/sshd_config
-sudo sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 0/' /etc/ssh/sshd_config
-sudo sed -i 's/^#Ciphers.*/Ciphers aes128-ctr,aes192-ctr,aes256-ctr/' /etc/ssh/sshd_config
-sudo sed -i 's/^#MACs.*/MACs hmac-sha2-256,hmac-sha2-512/' /etc/ssh/sshd_config
-sudo sed -i 's|^#Banner.*|Banner /etc/issue.net|' /etc/ssh/sshd_config
-sudo chmod 600 /etc/ssh/sshd_config
-sudo systemctl restart ssh
-
-# Configure password policies
+# Ensure password creation requirements are configured
 sudo apt-get install libpam-pwquality -y
 sudo sed -i 's/^# minlen =.*/minlen = 14/' /etc/security/pwquality.conf
 sudo sed -i 's/^# dcredit =.*/dcredit = -1/' /etc/security/pwquality.conf
 sudo sed -i 's/^# ucredit =.*/ucredit = -1/' /etc/security/pwquality.conf
 sudo sed -i 's/^# lcredit =.*/lcredit = -1/' /etc/security/pwquality.conf
 sudo sed -i 's/^# ocredit =.*/ocredit = -1/' /etc/security/pwquality.conf
-sudo sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs
-sudo sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   7/' /etc/login.defs
-sudo sed -i 's/^PASS_WARN_AGE.*/PASS_WARN_AGE   14/' /etc/login.defs
 
-# Lockout for failed password attempts
-sudo grep -q 'pam_tally2.so' /etc/pam.d/common-auth || echo 'auth required pam_tally2.so deny=5 unlock_time=900' | sudo tee -a /etc/pam.d/common-auth
+# Ensure lockout for failed password attempts is configured
+sudo echo 'auth required pam_tally2.so deny=5 unlock_time=900' | sudo tee -a /etc/pam.d/common-auth
 
-# Configure file permissions
-sudo chmod 0400 /etc/gshadow
-sudo chmod 0400 /etc/shadow
-sudo chmod 0600 /etc/passwd
-sudo chmod 0600 /boot/grub/grub.cfg
-sudo chmod 700 /var/tmp
-sudo chmod 750 /home/*
+# Disable the installation and use of file systems that are not required (hfs)
+echo "install hfs /bin/true" >> /etc/modprobe.d/hfs.conf
+rmmod hfs 2>/dev/null
 
-# Check and create missing directories if required for cron
-echo "Configuring cron permissions..."
-for dir in /etc/cron.{hourly,daily,weekly,monthly,d}; do
-  [ -d "$dir" ] && chmod 700 "$dir" || echo "Directory $dir does not exist. Skipping..."
-done
+# Set /etc/gshadow file permissions to 0400
+chmod 0400 /etc/gshadow
+
+# Ensure permissions on /etc/cron.daily are configured
+chmod -R go-rwx /etc/cron.daily
+
+# Disable the installation and use of file systems that are not required (jffs2)
+echo "install jffs2 /bin/true" >> /etc/modprobe.d/jffs2.conf
+rmmod jffs2 2>/dev/null
+
+# Ensure at/cron is restricted to authorized users
+chmod 600 /etc/cron.allow
+chmod 600 /etc/at.allow
+touch /etc/cron.allow /etc/at.allow
+chown root:root /etc/cron.allow /etc/at.allow
+rm -f /etc/cron.deny /etc/at.deny
+
+# Enable logging of martian packets (those with impossible addresses)
+echo "net.ipv4.conf.all.log_martians = 1" >> /etc/sysctl.conf
+echo "net.ipv4.conf.default.log_martians = 1" >> /etc/sysctl.conf
+sysctl -p
+
+# Disable root login via SSH
+sed -i '/^PermitRootLogin/c\PermitRootLogin no' /etc/ssh/sshd_config
+systemctl restart sshd
 
 # Remove unnecessary accounts
-for user in games sync; do
-  if id "$user" &>/dev/null; then
-    sudo userdel -r $user || echo "The user $user doesnot exist. Skipping."
-  fi
-  if getent group "$user" &>/dev/null; then
-    sudo groupdel $user || echo "The group $user doesnot exist. Skipping..."
-  fi
-done
+awk -F: '($3 < 1000) {print $1}' /etc/passwd | grep -vE "^(root|sync|shutdown|halt)" | while read -r user; do userdel -r "$user"; done
 
-# Enable logging of martian packets
-apply_sysctl_setting net.ipv4.conf.all.log_martians 1
-apply_sysctl_setting net.ipv4.conf.default.log_martians 1
+# Enable source validation by reverse path
+sysctl -w net.ipv4.conf.default.rp_filter=1
+sysctl -w net.ipv4.conf.all.rp_filter=1
+echo "net.ipv4.conf.default.rp_filter = 1" >> /etc/sysctl.conf
+echo "net.ipv4.conf.all.rp_filter = 1" >> /etc/sysctl.conf
 
-# Restrict su command to root group
-sudo dpkg-statoverride --update --add root root 4750 /bin/su
-if ! getent group root &>/dev/null; then
-  sudo groupadd -r root
-fi
-sudo usermod -a -G root $(whoami)
+# Disable DCCP
+echo "install dccp /bin/true" >> /etc/modprobe.d/dccp.conf
+rmmod dccp 2>/dev/null
 
 # Remove unnecessary packages
-sudo apt-get autoremove -y
-sudo apt-get clean
+apt-get autoremove -y
 
-# Set umask for all users
-sudo sed -i 's/^UMASK.*/UMASK 077/' /etc/login.defs
+# Ensure permissions on /etc/cron.hourly are configured
+chmod 700 /etc/cron.hourly
 
-# Set noexec, nosuid, and nodev options for /tmp, /var/tmp, /home, and /dev/shm
-for mount in /tmp /var/tmp /dev/shm /home; do
-  if mount | grep -q "$mount"; then
-    sudo mount -o remount,noexec,nodev,nosuid $mount
+# Ensure SSH LoginGraceTime is set to one minute or less
+sed -i '/^LoginGraceTime/c\LoginGraceTime 1m' /etc/ssh/sshd_config
+systemctl restart sshd
+
+# Sending ICMP redirects should be disabled for all interfaces
+sysctl -w net.ipv4.conf.default.accept_redirects=0
+sysctl -w net.ipv4.conf.all.accept_redirects=0
+echo "net.ipv4.conf.default.accept_redirects = 0" >> /etc/sysctl.conf
+echo "net.ipv4.conf.all.accept_redirects = 0" >> /etc/sysctl.conf
+
+# Disable the installation and use of file systems that are not required (hfsplus)
+modprobe -r hfsplus
+echo "install hfsplus /bin/true" >> /etc/modprobe.d/hfsplus.conf
+
+# Ensure SCTP is disabled
+modprobe -r sctp
+echo "install sctp /bin/true" >> /etc/modprobe.d/sctp.conf
+
+# Disable the installation and use of file systems that are not required (cramfs)
+modprobe -r cramfs
+echo "install cramfs /bin/true" >> /etc/modprobe.d/cramfs.conf
+
+# Disable accepting source routed packets
+echo "net.ipv4.conf.default.accept_source_route = 0" >> /etc/sysctl.conf
+sysctl -w net.ipv4.conf.default.accept_source_route=0
+sysctl -w net.ipv4.conf.all.accept_source_route=0
+
+echo "net.ipv4.conf.all.accept_source_route = 0" >> /etc/sysctl.conf
+
+# Ensure permissions on /etc/cron.monthly are configured
+chmod 700 /etc/cron.monthly
+
+# Ensure password reuse is limited
+if ! grep -q "^password.*pam_pwhistory.so" /etc/pam.d/common-password; then
+    echo "password required pam_pwhistory.so remember=5" >> /etc/pam.d/common-password
+fi
+
+# Ensure SSH access is limited
+echo "AllowUsers azureuser" >> /etc/ssh/sshd_config  # Replace 'azureuser' with required username(s)
+systemctl restart sshd
+
+# Ensure permissions on bootloader config are configured
+chmod 600 /boot/grub/grub.cfg
+
+# Set default umask for all users to 077 in /etc/login.defs
+sed -i 's/^UMASK.*/UMASK 077/' /etc/login.defs
+
+# Enable SSH warning banner
+echo "Authorized use only. Unauthorized access is prohibited." > /etc/issue.net
+sed -i 's|^#Banner.*|Banner /etc/issue.net|' /etc/ssh/sshd_config
+systemctl restart sshd
+
+# Ensure permissions on /etc/ssh/sshd_config are configured
+chmod 600 /etc/ssh/sshd_config
+chown root:root /etc/ssh/sshd_config
+
+# Ensure /etc/gshadow file permissions are set to 0400
+chmod 0400 /etc/gshadow
+chown root:root /etc/gshadow
+
+# Restrict core dumps
+echo "* hard core 0" >> /etc/security/limits.conf
+echo "fs.suid_dumpable = 0" >> /etc/sysctl.conf
+sysctl -p
+
+# Disable TIPC (Transparent Inter-Process Communication)
+echo "install tipc /bin/true" > /etc/modprobe.d/tipc.conf
+rmmod tipc || true
+
+# Disable ICMP redirects for all interfaces
+echo "net.ipv4.conf.default.secure_redirects = 0" >> /etc/sysctl.conf
+echo "net.ipv4.conf.all.secure_redirects = 0" >> /etc/sysctl.conf
+sysctl -p
+
+# Ensure permissions on /etc/cron.d are configured
+chmod 600 /etc/cron.d
+chown root:root /etc/cron.d
+
+# Function to set permissions on a file
+set_file_permissions() {
+  local file=$1
+  local permissions=$2
+  if [ -e "$file" ]; then
+    chmod $permissions "$file"
+    echo "Set permissions $permissions on $file."
   else
-    echo "Mount point $mount is not active. Skipping..."
+    echo "File $file not found."
+  fi
+}
+
+# Set /etc/shadow file permissions to 0400
+set_file_permissions /etc/shadow 0400
+
+# Set /etc/passwd- file permissions to 0600
+set_file_permissions /etc/passwd- 0600
+
+# Configure SSH Idle Timeout Interval
+SSH_CONFIG="/etc/ssh/sshd_config"
+sed -i '/^ClientAliveInterval/d' $SSH_CONFIG
+sed -i '/^ClientAliveCountMax/d' $SSH_CONFIG
+echo "ClientAliveInterval 300" >> $SSH_CONFIG
+echo "ClientAliveCountMax 0" >> $SSH_CONFIG
+systemctl restart sshd
+echo "Configured SSH Idle Timeout Interval."
+
+# Restrict access to the root account via su to the 'root' group
+groupadd -f root
+chgrp root /bin/su
+chmod 4750 /bin/su
+echo "Restricted access to the root account via su to the 'root' group."
+
+# nsure system accounts are non-login
+awk -F: '($3 < 1000 && $7 != "/usr/sbin/nologin" && $7 != "/bin/false") {print $1}' /etc/passwd | while read -r user; do
+  usermod -s /usr/sbin/nologin "$user"
+  echo "Set non-login shell for system account: $user."
+done
+
+# Set /etc/shadow- file permissions to 0400
+set_file_permissions /etc/shadow- 0400
+
+# Ensure permissions on /etc/cron.weekly are configured
+set_file_permissions /etc/cron.weekly 0700
+
+# Ensure only approved MAC algorithms are used
+sed -i '/^MACs/d' $SSH_CONFIG
+echo "MACs hmac-sha2-256,hmac-sha2-512" >> $SSH_CONFIG
+systemctl restart sshd
+echo "Configured approved MAC algorithms for SSH."
+
+# Enable source validation by reverse path for all interfaces
+SYSCTL_CONF="/etc/sysctl.conf"
+sed -i '/^net.ipv4.conf.all.rp_filter/d' $SYSCTL_CONF
+echo "net.ipv4.conf.all.rp_filter = 1" >> $SYSCTL_CONF
+sysctl -p
+echo "Enabled source validation by reverse path for all interfaces."
+
+# Ensure user home directories are mode 750 or more restrictive
+awk -F: '($3 >= 1000 && $7 != "/usr/sbin/nologin" && $7 != "/bin/false") {print $6}' /etc/passwd | while read -r dir; do
+  if [ -d "$dir" ]; then
+    chmod 750 "$dir"
+    echo "Set permissions 750 on home directory: $dir."
   fi
 done
 
-# Enable bootloader password protection
-grub_password="YourStrongPassword"
-hashed_password=$(echo -e "$grub_password\n$grub_password" | grub-mkpasswd-pbkdf2 | awk '/grub.pbkdf2/ {print $NF}')
-if ! grep -q "set superusers=" /etc/grub.d/40_custom; then
-  cat <<EOF | sudo tee -a /etc/grub.d/40_custom
-set superusers="root"
-password_pbkdf2 root $hashed_password
-EOF
-  sudo update-grub
-else
-  echo "GRUB password already configured."
-fi
+# Function to check and update mount options for partitions
+set_mount_option() {
+    local partition=$1
+    local option=$2
+
+    # Check if the option is already set
+    if ! grep -q "$partition" /etc/fstab || ! grep "$partition" /etc/fstab | grep -q "$option"; then
+        # If not, update /etc/fstab to add the option
+        echo "Adding $option to $partition in /etc/fstab"
+        sed -i "/$partition/ s/\(defaults\)/\1,$option/" /etc/fstab
+    else
+        echo "$option already set on $partition"
+    fi
+}
+
+# Ensure noexec is set on /var/tmp partition
+set_mount_option "/var/tmp" "noexec"
+
+# Ensure nosuid is set on /var/tmp partition
+set_mount_option "/var/tmp" "nosuid"
+
+# Ensure nosuid is set on /tmp partition
+set_mount_option "/tmp" "nosuid"
+
+# Ensure noexec is set on /dev/shm partition
+set_mount_option "/dev/shm" "noexec"
+
+# Ensure nodev is set on /tmp partition
+set_mount_option "/tmp" "nodev"
+
+# Ensure nodev is set on /var/tmp partition
+set_mount_option "/var/tmp" "nodev"
+
+# Ensure nodev is set on /home partition
+set_mount_option "/home" "nodev"
+
+# Remount the partitions to apply changes
+echo "Remounting affected partitions..."
+mount -o remount /var/tmp /tmp /dev/shm /home
 
 # Final cleanup
-echo "Hardening complete!"
+echo "Script execution completed. System hardened successfully."
