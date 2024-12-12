@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # Update and Upgrade System
 echo "Updating and upgrading system..."
