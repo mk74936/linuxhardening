@@ -301,7 +301,7 @@ echo "Remounting affected partitions..."
 mount -o remount /var/tmp /tmp /dev/shm /home
 
 # Restarting SSH services
-sudo systemctrl restart ssh
+sudo systemctl restart ssh
 
 # Final cleanup
 echo "Script execution completed. System hardened successfully."
