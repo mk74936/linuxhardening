@@ -256,3 +256,8 @@ sudo systemctl restart ssh
 
 # Final cleanup
 echo "Script execution completed. System hardened successfully."
+
+
+# Reboot the system
+echo "Rebooting the VM now..."
+sudo reboot
