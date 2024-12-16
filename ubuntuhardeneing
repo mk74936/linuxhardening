@@ -109,7 +109,7 @@ apt-get autoremove -y
 chmod 700 /etc/cron.hourly
 
 # Ensure SSH LoginGraceTime is set to one minute or less
-sed -i '/^LoginGraceTime/c\LoginGraceTime 1m' /etc/ssh/sshd_config
+grep -q '^LoginGraceTime' /etc/ssh/sshd_config && sudo sed -i '/^LoginGraceTime/c\LoginGraceTime 1m' /etc/ssh/sshd_config || echo 'LoginGraceTime 1m' | sudo tee -a /etc/ssh/sshd_config
 
 
 # Sending ICMP redirects should be disabled for all interfaces
