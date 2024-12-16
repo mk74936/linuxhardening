@@ -36,16 +36,6 @@ sudo modprobe -r rds
 # Ensure rsync service is not enabled
 sudo systemctl disable rsync --now || echo "Rsync service not installed"
 
-# All bootloaders should have password protection enabled
-sudo grub-mkpasswd-pbkdf2 <<EOF > /tmp/grub-pass
-YourStrongPassword
-YourStrongPassword
-EOF
-GRUB_PASS=$(grep -oP '(?<=PBKDF2 hash of your password is ).*' /tmp/grub-pass)
-sudo echo "set superusers=\"root\"" >> /etc/grub.d/40_custom
-sudo echo "password_pbkdf2 root $GRUB_PASS" >> /etc/grub.d/40_custom
-sudo update-grub
-rm -f /tmp/grub-pass
 
 # Ensure mounting of USB storage devices is disabled
 echo "install usb-storage /bin/true" | sudo tee /etc/modprobe.d/disable-usb-storage.conf
@@ -260,45 +250,6 @@ awk -F: '($3 >= 1000 && $7 != "/usr/sbin/nologin" && $7 != "/bin/false") {print 
   fi
 done
 
-# Function to check and update mount options for partitions
-set_mount_option() {
-    local partition=$1
-    local option=$2
-
-    # Check if the option is already set
-    if ! grep -q "$partition" /etc/fstab || ! grep "$partition" /etc/fstab | grep -q "$option"; then
-        # If not, update /etc/fstab to add the option
-        echo "Adding $option to $partition in /etc/fstab"
-        sed -i "/$partition/ s/\(defaults\)/\1,$option/" /etc/fstab
-    else
-        echo "$option already set on $partition"
-    fi
-}
-
-# Ensure noexec is set on /var/tmp partition
-set_mount_option "/var/tmp" "noexec"
-
-# Ensure nosuid is set on /var/tmp partition
-set_mount_option "/var/tmp" "nosuid"
-
-# Ensure nosuid is set on /tmp partition
-set_mount_option "/tmp" "nosuid"
-
-# Ensure noexec is set on /dev/shm partition
-set_mount_option "/dev/shm" "noexec"
-
-# Ensure nodev is set on /tmp partition
-set_mount_option "/tmp" "nodev"
-
-# Ensure nodev is set on /var/tmp partition
-set_mount_option "/var/tmp" "nodev"
-
-# Ensure nodev is set on /home partition
-set_mount_option "/home" "nodev"
-
-# Remount the partitions to apply changes
-echo "Remounting affected partitions..."
-mount -o remount /var/tmp /tmp /dev/shm /home
 
 # Restarting SSH services
 sudo systemctl restart ssh
