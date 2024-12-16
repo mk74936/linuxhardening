@@ -34,11 +34,16 @@ build {
     destination = "/tmp/provisioner.sh" # Destination on the instance
   }
 
+ # Reboot the instance
   provisioner "shell" {
-    execute_command = "echo '{{user `ssh_password`}}' | sudo -S bash '{{.Path}}'"
-    script          = "/tmp/provisioner.sh" # Execute the uploaded script
+    inline = ["sudo reboot"]
   }
+
+  # Pause for 15 minutes after reboot to ensure VM is fully ready
   provisioner "shell" {
-    script = "provisioner.sh"
+    pause_before = "15m" # Wait for 15 minutes before running the next step
+    inline       = ["echo 'Waiting complete. Resuming build...'"]
   }
+
+
 }
